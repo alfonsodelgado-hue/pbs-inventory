@@ -3,17 +3,19 @@ window.Sync = (() => {
   let db, on = false; const me = Math.random().toString(36).slice(2);
   let remoteUsers = [];
   const CH = 400000;
-  async function init() {
+  async function doInit() {
     const c = window.FIREBASE_CONFIG;
     if (!c || String(c.apiKey).startsWith('PASTE') || !window.firebase) return false;
     firebase.initializeApp(c);
-    try { await firebase.auth().signInAnonymously(); } catch (e) { console.warn('auth', e); }
+    try { await Promise.race([firebase.auth().signInAnonymously(), new Promise(r => setTimeout(r, 5000))]); } catch (e) { console.warn('auth', e); }
     db = firebase.firestore();
-    try { await db.enablePersistence({ synchronizeTabs: true }); } catch (e) {}
+    try { await Promise.race([db.enablePersistence({ synchronizeTabs: true }), new Promise(r => setTimeout(r, 3000))]); } catch (e) {}
     on = true;
     window.addEventListener('online', () => window.electronAPI && window.electronAPI.checkUpdates());
     return true;
   }
+  // Never block the login screen: give up after 8s and run in local mode.
+  function init() { return Promise.race([doInit().catch(e => { console.error(e); return false; }), new Promise(r => setTimeout(() => r(false), 8000))]); }
   const badge = (t, ok) => { const b = document.getElementById('syncBadge'); if (b) { b.textContent = t; b.className = 'text-[10px] font-bold px-2 py-0.5 rounded ' + (ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'); } };
   async function getUsers() {
     if (!on) return [];
