@@ -698,7 +698,7 @@
     window.toggleYearDropdown = function() { document.getElementById('yearDropdownMenu').classList.toggle('hidden'); }
     window.toggleMonthDropdown = function() { document.getElementById('monthDropdownMenu').classList.toggle('hidden'); }
 
-    (async () => {
+    ;(async () => {
       try {
         if (window.Sync && await Sync.init()) {
           const ru = await Sync.getUsers();
