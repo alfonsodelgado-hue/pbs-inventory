@@ -43,7 +43,7 @@ window.Sync = (() => {
   }
   function listen({ onNotes, onInventory }) {
     if (!on) return;
-    db.collection('notes').onSnapshot(s => {
+    db.collection('notes').onSnapshot({ includeMetadataChanges: true }, s => {
       const ch = s.docChanges().filter(c => !c.doc.metadata.hasPendingWrites).map(c => c.doc.data());
       if (ch.length) onNotes(ch);
       badge(s.metadata.fromCache ? 'OFFLINE · cached' : 'LIVE', !s.metadata.fromCache);
