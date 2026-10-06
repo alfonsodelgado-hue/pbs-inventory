@@ -1,0 +1,12 @@
+{
+  "name": "pbs-inventory", "version": "1.0.0", "description": "PBS Inventory Analysis", "main": "main.js",
+  "scripts": { "start": "electron .", "dist": "electron-builder --win --publish never" },
+  "dependencies": { "electron-updater": "^6.3.9" },
+  "devDependencies": { "electron": "^31.7.0", "electron-builder": "^24.13.3" },
+  "build": {
+    "appId": "com.pbs.inventory", "productName": "PBS Inventory",
+    "files": ["main.js", "preload.js", "app/**"],
+    "win": { "target": "nsis" }, "nsis": { "oneClick": true, "perMachine": false },
+    "publish": [{ "provider": "github", "owner": "alfonsodelgado-hue", "repo": "pbs-inventory" }]
+  }
+}

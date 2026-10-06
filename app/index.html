@@ -1,0 +1,1763 @@
+<!DOCTYPE html>
+<html lang="es" class="dark h-full bg-slate-950">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Análisis de Inventario - PBS Corporate BI</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: { brand: { 50: '#f0f7ff', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' } },
+          animation: { 'fade-in-up': 'fadeInUp 0.3s ease-out forwards' },
+          keyframes: { fadeInUp: { '0%': { opacity: '0', transform: 'translateY(15px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } } }
+        }
+      }
+    }
+  </script>
+
+  <!-- Dependencias Core -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="sync.js"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(30, 41, 59, 0.8); }
+    .hover-row:hover { background-color: rgba(30, 41, 59, 0.6); transform: scale(1.001); transition: all 0.2s; cursor: pointer; }
+    input[type="checkbox"] { accent-color: #3b82f6; cursor: pointer; }
+    .readonly-mode { opacity: 0.6; pointer-events: none; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans min-h-full flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- PANTALLA DE ACCESO (LOGIN) -->
+  <div id="authScreen" class="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950 p-4">
+    <div class="w-full max-w-md">
+      <div class="flex flex-col items-center mb-6 text-center">
+        <div class="p-3 bg-gradient-to-br from-brand-500 to-indigo-600 text-white rounded-2xl shadow-lg shadow-brand-500/20 mb-3">
+          <i data-lucide="network" class="w-8 h-8"></i>
+        </div>
+        <h1 class="font-black text-xl text-white">Análisis de Inventario PBS</h1>
+        <p class="text-[11px] uppercase tracking-wider text-brand-400 font-bold mt-1">Acceso de Equipo</p>
+      </div>
+
+      <!-- SETUP INICIAL -->
+      <div id="setupPanel" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl animate-fade-in-up space-y-4">
+        <div class="flex items-center space-x-2 text-amber-400">
+          <i data-lucide="shield-alert" class="w-5 h-5"></i>
+          <h2 class="text-sm font-bold uppercase tracking-wider">Crea la cuenta Administrador</h2>
+        </div>
+        <p class="text-xs text-slate-400">No se detectaron usuarios. Crea la cuenta base para empezar a operar.</p>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nombre de usuario</label>
+          <input id="setupUser" type="text" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-brand-500" placeholder="ej. admin" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Contraseña</label>
+          <input id="setupPass" type="password" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-brand-500" placeholder="Mínimo 4 caracteres" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Confirmar contraseña</label>
+          <input id="setupPass2" type="password" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-brand-500" />
+        </div>
+        <p id="setupError" class="text-xs text-rose-400 font-semibold hidden"></p>
+        <button onclick="handleSetupSubmit()" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20">
+          <i data-lucide="shield-check" class="w-4 h-4"></i><span>Crear cuenta Administrador</span>
+        </button>
+      </div>
+
+      <!-- LOGIN NORMAL -->
+      <div id="loginPanel" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl animate-fade-in-up space-y-4">
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Usuario</label>
+          <input id="loginUser" type="text" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-brand-500" placeholder="Nombre de usuario" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Contraseña</label>
+          <input id="loginPass" type="password" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2.5 outline-none focus:border-brand-500" placeholder="••••••••" onkeydown="if(event.key==='Enter') handleLoginSubmit()" />
+        </div>
+        <p id="loginError" class="text-xs text-rose-400 font-semibold hidden"></p>
+        <button onclick="handleLoginSubmit()" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20">
+          <i data-lucide="log-in" class="w-4 h-4"></i><span>Ingresar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APLICACIÓN PRINCIPAL -->
+  <div id="appContainer" class="hidden flex-col min-h-full">
+      <header class="glass-panel sticky top-0 z-40">
+        <div class="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="p-2 bg-gradient-to-br from-brand-500 to-indigo-600 text-white rounded-xl shadow-lg shadow-brand-500/20">
+              <i data-lucide="network" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <h1 class="font-bold text-lg leading-tight tracking-wide text-white">Análisis de Inventario PBS</h1>
+              <p class="text-[10px] uppercase tracking-wider text-brand-400 font-bold flex items-center">
+                  <span id="syncBadge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-300 mr-2">LOCAL</span><span id="userRoleBadge" class="bg-brand-500/20 text-brand-300 px-1.5 py-0.5 rounded mr-2">ROLE</span>
+                  Colaboración Sincronizada
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-3">
+            <button id="btnManageUsers" onclick="openUsersModal()" data-perm="manageUsers" class="hidden text-slate-400 hover:text-brand-400 text-xs font-bold px-3 py-2 transition-colors items-center space-x-1" title="Gestionar usuarios y permisos">
+                <i data-lucide="users-round" class="w-4 h-4"></i> <span class="hidden sm:inline">Usuarios</span>
+            </button>
+
+            <label id="btnUploadLabel" for="fileInput" data-perm="uploadFile" class="hidden cursor-pointer bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold px-4 py-2.5 rounded-lg border border-brand-400/30 transition-all items-center space-x-2 shadow-lg shadow-brand-500/20">
+              <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+              <span id="uploadBtnText">Cargar BD</span>
+            </label>
+            <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden" />
+
+            <button id="exportBtn" onclick="openExportModal()" disabled data-perm="export" class="hidden disabled:opacity-40 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-700 transition-all items-center space-x-2">
+              <i data-lucide="download" class="w-4 h-4"></i>
+              <span>Exportar Maestro</span>
+            </button>
+
+            <div class="flex items-center space-x-2 pl-3 ml-1 border-l border-slate-800">
+              <button onclick="handleLogout()" title="Cerrar sesión" class="p-2 bg-slate-800 hover:bg-rose-600 rounded-lg text-slate-300 hover:text-white transition-colors">
+                <i data-lucide="log-out" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="flex-1 max-w-[95rem] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        <!-- UPLOAD ZONE -->
+        <div id="uploadContainer" class="border-2 border-dashed border-slate-700 hover:border-brand-500 rounded-[2rem] p-16 text-center bg-slate-900/40 transition-all duration-300 flex flex-col items-center justify-center space-y-5">
+          <div class="p-5 bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl text-brand-400 border border-slate-700 shadow-xl">
+            <i data-lucide="database" class="w-14 h-14"></i>
+          </div>
+          <div>
+            <h3 class="text-2xl font-bold text-white">Sube el Archivo Maestro</h3>
+            <p class="text-sm text-slate-400 max-w-xl mt-2 mx-auto">
+                Carga el archivo exportado desde la carpeta compartida o el archivo crudo del sistema.
+            </p>
+          </div>
+          <label id="dropZoneUploadLabel" for="fileInput" data-perm="uploadFile" class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-brand-300 text-sm font-semibold px-8 py-3 rounded-xl border border-slate-700 transition-all shadow-md">
+            Examinar
+          </label>
+        </div>
+
+        <!-- DASHBOARD -->
+        <div id="dashboardContent" class="hidden space-y-6 animate-fade-in-up">
+          
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 mb-5 space-y-3 sm:space-y-0">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="filter" class="w-5 h-5 text-brand-400"></i>
+                <h2 class="text-sm font-bold text-white uppercase tracking-wider">Explorador Global</h2>
+              </div>
+              <div class="relative w-full sm:w-96">
+                <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+                <input type="text" id="filterSearch" placeholder="Buscar PO, Remarks, Notas, Modelos..." class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg pl-9 pr-3 py-2.5 focus:border-brand-500 outline-none transition-all" />
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Estado de Stock</label>
+                <select id="filterStatus" class="w-full bg-slate-950 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-brand-500">
+                    <option value="ACTIVE" selected>Inventario Activo</option>
+                    <option value="NEW">Solo Órdenes Nuevas</option>
+                    <option value="REMOVED">Retirados (Marcados)</option>
+                    <option value="ALL">Todo el Histórico</option>
+                </select>
+              </div>
+              
+              <div id="yearDropdownContainer" class="relative">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Años (Sel. Múltiple)</label>
+                <div onclick="toggleYearDropdown()" class="w-full bg-slate-950 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2.5 cursor-pointer flex justify-between items-center hover:border-slate-600 transition-colors">
+                    <span id="yearDropdownLabel" class="truncate font-semibold">Todos los años</span>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
+                </div>
+                <div id="yearDropdownMenu" class="hidden absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl max-h-64 overflow-y-auto p-2"></div>
+              </div>
+
+              <div id="monthDropdownContainer" class="relative">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Meses de Ingreso</label>
+                <div onclick="toggleMonthDropdown()" class="w-full bg-slate-950 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2.5 cursor-pointer flex justify-between items-center hover:border-slate-600 transition-colors">
+                    <span id="monthDropdownLabel" class="truncate font-semibold">Todos los meses</span>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
+                </div>
+                <div id="monthDropdownMenu" class="hidden absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl max-h-64 overflow-y-auto p-2"></div>
+              </div>
+
+              <div id="brandDropdownContainer" class="relative">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Marcas Asociadas</label>
+                <div onclick="toggleBrandDropdown()" class="w-full bg-slate-950 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-2.5 cursor-pointer flex justify-between items-center hover:border-slate-600 transition-colors">
+                    <span id="brandDropdownLabel" class="truncate font-semibold">Todas las marcas</span>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500"></i>
+                </div>
+                <div id="brandDropdownMenu" class="hidden absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl max-h-64 overflow-y-auto p-2"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden group">
+              <div class="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div class="flex items-center justify-between"><span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Costo USD</span><div class="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg"><i data-lucide="dollar-sign" class="w-4 h-4"></i></div></div>
+              <h2 id="kpiTotalCost" class="text-3xl font-black text-white mt-3">$0.00</h2>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden group">
+              <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div class="flex items-center justify-between"><span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Órdenes Totales</span><div class="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg"><i data-lucide="file-text" class="w-4 h-4"></i></div></div>
+              <h2 id="kpiTotalOrders" class="text-3xl font-black text-emerald-400 mt-3">0</h2>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden group">
+              <div class="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div class="flex items-center justify-between"><span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Unidades Físicas</span><div class="p-1.5 bg-indigo-500/10 text-indigo-400 rounded-lg"><i data-lucide="layers" class="w-4 h-4"></i></div></div>
+              <h2 id="kpiTotalUnits" class="text-3xl font-black text-white mt-3">0</h2>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden group">
+              <div class="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div class="flex items-center justify-between"><span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Marcas Activas</span><div class="p-1.5 bg-amber-500/10 text-amber-400 rounded-lg"><i data-lucide="award" class="w-4 h-4"></i></div></div>
+              <h2 id="kpiBrandCount" class="text-3xl font-black text-white mt-3">0</h2>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+              <h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-5 flex justify-between"><span>Evolución (USD)</span> <i data-lucide="bar-chart-3" class="w-4 h-4"></i></h3>
+              <div class="h-64 relative w-full"><canvas id="timelineChart"></canvas></div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+              <h3 class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-5 flex justify-between"><span>Participación por Marca</span> <i data-lucide="bar-chart-horizontal" class="w-4 h-4"></i></h3>
+              <div class="h-64 relative w-full flex justify-center"><canvas id="brandChart"></canvas></div>
+            </div>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row justify-between items-center bg-slate-950/50 space-y-3 sm:space-y-0">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="table-properties" class="w-5 h-5 text-brand-400"></i>
+                <h3 class="text-sm font-bold text-white uppercase tracking-wider">Maestro de Órdenes (PO)</h3>
+              </div>
+              <div class="flex items-center space-x-4">
+                <span id="pageInfoTag" class="text-xs text-slate-400 font-mono bg-slate-800 px-3 py-1 rounded-full">0 Órdenes</span>
+                <div class="flex space-x-1">
+                  <button id="btnPrevPage" onclick="changePage(-1)" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 disabled:opacity-30"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                  <button id="btnNextPage" onclick="changePage(1)" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 disabled:opacity-30"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                </div>
+              </div>
+            </div>
+            <div class="overflow-x-auto min-h-[300px]">
+              <table class="w-full text-left text-xs whitespace-nowrap">
+                <thead class="bg-slate-950 text-slate-400 border-b border-slate-800 uppercase tracking-wider text-[10px] select-none">
+                  <tr>
+                    <th class="px-5 py-4 font-bold text-center" title="Retirar del inventario"><i data-lucide="check-square" class="w-4 h-4 inline-block text-brand-500"></i></th>
+                    <th class="px-4 py-4 font-bold cursor-pointer hover:text-white group" onclick="sortBy('year')">
+                        <div class="flex items-center space-x-1"><span>Año</span><span id="sort-icon-year" class="sort-icon"></span></div>
+                    </th>
+                    <th class="px-4 py-4 font-bold cursor-pointer hover:text-white group" onclick="sortBy('month')">
+                        <div class="flex items-center space-x-1"><span>Mes</span><span id="sort-icon-month" class="sort-icon"></span></div>
+                    </th>
+                    <th class="px-4 py-4 font-bold cursor-pointer hover:text-white group" onclick="sortBy('po')">
+                        <div class="flex items-center space-x-1"><span>PO / Orden</span><span id="sort-icon-po" class="sort-icon"></span></div>
+                    </th>
+                    <th class="px-4 py-4 font-bold cursor-pointer hover:text-white group" onclick="sortBy('brand')">
+                        <div class="flex items-center space-x-1"><span>Marcas Asociadas</span><span id="sort-icon-brand" class="sort-icon"></span></div>
+                    </th>
+                    <th class="px-4 py-4 font-bold w-1/4 cursor-pointer hover:text-white group" onclick="sortBy('remarks')">
+                        <div class="flex items-center space-x-1"><span>PO Remarks</span><span id="sort-icon-remarks" class="sort-icon"></span></div>
+                    </th>
+                    <th class="px-4 py-4 font-bold w-1/4">Notas del Equipo</th>
+                    <th class="px-4 py-4 font-bold text-center cursor-pointer hover:text-white group" onclick="sortBy('units')">
+                        <div class="flex items-center justify-center space-x-1"><span>Unidades</span><span id="sort-icon-units" class="sort-icon"></span></div>
+                    </th>
+                    <th class="px-5 py-4 font-bold text-right text-slate-300 cursor-pointer hover:text-white group" onclick="sortBy('cost')">
+                        <div class="flex items-center justify-end space-x-1"><span>Costo Base USD</span><span id="sort-icon-cost" class="sort-icon"></span></div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTableBody" class="divide-y divide-slate-800/50 text-slate-300"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </main>
+  </div>
+
+  <!-- MODAL: GENERADOR DE REPORTES A MEDIDA -->
+  <div id="exportModal" class="fixed inset-0 z-[110] hidden items-center justify-center">
+    <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onclick="closeExportModal()"></div>
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-10 w-11/12 max-w-2xl flex flex-col transform transition-all animate-fade-in-up">
+      <div class="flex justify-between items-center p-5 border-b border-slate-800 bg-slate-800/30">
+        <h3 class="text-lg font-black text-white flex items-center space-x-2">
+          <i data-lucide="sliders" class="w-5 h-5 text-brand-400"></i>
+          <span>Generador de Reportes a Medida</span>
+        </h3>
+        <button onclick="closeExportModal()" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-2 rounded-lg transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      
+      <div class="p-6 overflow-y-auto max-h-[75vh] space-y-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Nombre del Archivo Excel</label>
+                <div class="flex relative">
+                    <input type="text" id="expFileName" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg pl-3 pr-12 py-2 outline-none focus:border-brand-500" placeholder="Ej. Reporte_Inventario">
+                    <span class="absolute right-3 top-2.5 text-xs font-mono text-slate-500">.xlsx</span>
+                </div>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Estructura del Libro (Pestañas)</label>
+                <select id="expStructure" class="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none focus:border-brand-500">
+                    <option value="SINGLE">Todo en una sola hoja</option>
+                    <option value="BY_YEAR">Separar en múltiples hojas por Año</option>
+                    <option value="BY_BRAND">Separar en hojas por Marca Principal</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4">
+            <label class="flex items-center space-x-3 cursor-pointer group">
+                <input type="checkbox" id="expSummary" checked class="w-4 h-4 rounded border-indigo-700 bg-slate-900 text-indigo-500">
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-indigo-300 group-hover:text-indigo-200 transition-colors">Generar Hoja de "Resumen Ejecutivo"</span>
+                    <span class="text-[10px] text-indigo-400/70">Añade una primera pestaña con KPIs consolidados del filtro actual.</span>
+                </div>
+            </label>
+        </div>
+
+        <div>
+            <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center space-x-2 border-b border-slate-800 pb-2">
+                <i data-lucide="columns" class="w-4 h-4 text-slate-500"></i><span>Personalizar Columnas a Incluir</span>
+            </h4>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <!-- Data General -->
+                <div class="space-y-2 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <p class="text-[10px] uppercase font-bold text-slate-500 mb-2">Datos Maestros</p>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colYear" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Año de Adquisición</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colMonth" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Mes de Ingreso</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colPO" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Número de PO / Orden</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colLink" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Enlace Original a PO</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colBrands" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Marcas Asociadas</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colRemarks" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">PO Remarks (Desc. General)</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colStatus" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Estado (Activo/Retirado)</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colComments" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500"><span class="text-sm text-slate-300">Mis Notas del Equipo</span></label>
+                </div>
+
+                <!-- Desglose Granular -->
+                <div class="space-y-2 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div class="flex justify-between items-center mb-2">
+                        <p class="text-[10px] uppercase font-bold text-emerald-500">Desglose Fila por Ítem</p>
+                        <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-500"></i>
+                    </div>
+                    <p class="text-[9px] text-slate-500 leading-tight mb-3">Multiplicará las filas para mostrar cada ítem individualmente.</p>
+                    
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="detSerial" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500"><span class="text-sm text-slate-300">Serie / Referencia</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="detBrand" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500"><span class="text-sm text-slate-300">Marca del Ítem</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="detModel" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500"><span class="text-sm text-slate-300">Modelo del Ítem</span></label>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="detDesc" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500"><span class="text-sm text-slate-300">Descripción Específica</span></label>
+                    
+                    <div class="border-t border-slate-800 my-2 pt-2"></div>
+                    <p class="text-[10px] uppercase font-bold text-amber-500 mb-2">Variables Financieras</p>
+                    <label class="flex items-center space-x-3 cursor-pointer"><input type="checkbox" id="colCostBase" checked class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-amber-500"><span class="text-sm text-slate-300">Costo Unitario / Costo PO</span></label>
+                </div>
+            </div>
+        </div>
+        
+        <label id="expUsersRow" class="hidden items-start space-x-3 cursor-pointer bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+            <input type="checkbox" id="expUsers" class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-brand-500 mt-0.5">
+            <div class="flex flex-col">
+                <span class="text-sm font-bold text-slate-300">Sincronizar Permisos de Equipo (Base Oculta)</span>
+                <span class="text-[10px] text-slate-500 leading-tight">Mantiene la base de usuarios actual en el archivo Excel.</span>
+            </div>
+        </label>
+
+        <div class="border-t border-slate-800 pt-5">
+            <button onclick="confirmExport()" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-brand-500/20 flex justify-center items-center space-x-2">
+                <i data-lucide="download-cloud" class="w-5 h-5"></i>
+                <span>Generar Archivo a Medida</span>
+            </button>
+            <p class="text-[10px] text-center text-slate-500 mt-3">Solo se exportarán las <span class="font-bold text-slate-300" id="exportCountLabel">0</span> órdenes filtradas actualmente.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DRILL DOWN Y FACTURACION -->
+  <div id="poModal" class="fixed inset-0 z-[100] hidden items-center justify-center">
+    <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onclick="closeModal()"></div>
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-10 w-11/12 max-w-6xl flex flex-col max-h-[90vh] transform transition-all animate-fade-in-up">
+      <div class="flex justify-between items-center p-5 border-b border-slate-800 bg-slate-800/30">
+        <h3 class="text-xl font-black text-white flex items-center space-x-2">
+          <i data-lucide="scan-line" class="w-6 h-6 text-brand-400"></i>
+          <span>Detalle y Facturación de Orden: <span id="modalPoTitle" class="text-brand-400 tracking-wider"></span></span>
+        </h3>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-2 rounded-lg transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="p-5 overflow-y-auto flex-1 space-y-5">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            <div class="lg:col-span-8 grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div class="bg-slate-800/50 border border-slate-700 p-4 rounded-xl">
+                <p class="text-[10px] text-slate-400 uppercase font-bold">Unidades Totales</p>
+                <p id="modalTotalItems" class="text-xl font-black text-white mt-1">0</p>
+              </div>
+              <div class="bg-slate-800/50 border border-slate-700 p-4 rounded-xl">
+                <p class="text-[10px] text-slate-400 uppercase font-bold">Costo Base Original</p>
+                <p id="modalTotalCost" class="text-xl font-black text-white mt-1">$0.00</p>
+              </div>
+              <div class="bg-slate-800/50 border border-slate-700 p-4 rounded-xl sm:col-span-1 col-span-2">
+                <p class="text-[10px] text-slate-400 uppercase font-bold">Marcas</p>
+                <p id="modalBrands" class="text-xs font-bold text-brand-300 mt-2 truncate"></p>
+              </div>
+              <div class="bg-slate-800/50 border border-slate-700 p-4 rounded-xl sm:col-span-3 col-span-2">
+                <p class="text-[10px] text-slate-400 uppercase font-bold">PO Remarks (Comentario general)</p>
+                <p id="modalPoRemarks" class="text-xs text-slate-300 mt-1 whitespace-normal line-clamp-2"></p>
+              </div>
+            </div>
+
+            <div id="modalSimulatorWrapper" class="lg:col-span-4 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700 p-4 rounded-xl flex flex-col justify-between">
+                <div class="flex items-center space-x-2 mb-3">
+                    <i data-lucide="calculator" class="w-4 h-4 text-emerald-400"></i>
+                    <h4 class="font-bold text-white uppercase text-xs tracking-wider">Simulador de Precios</h4>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">Margen (+)</label>
+                        <div class="relative">
+                            <input type="number" id="modalCalcMargin" value="0" step="0.5" oninput="renderModalTable()" class="w-full bg-slate-950 border border-slate-700 text-emerald-400 font-bold text-xs rounded pl-2 pr-6 py-1.5 outline-none focus:border-emerald-500" />
+                            <span class="absolute right-2 top-1.5 text-slate-500 font-bold text-xs">%</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-bold text-slate-400 uppercase mb-1">Reserva (-)</label>
+                        <div class="relative">
+                            <input type="number" id="modalCalcDiscount" value="0" step="0.5" oninput="renderModalTable()" class="w-full bg-slate-950 border border-slate-700 text-rose-400 font-bold text-xs rounded pl-2 pr-6 py-1.5 outline-none focus:border-rose-500" />
+                            <span class="absolute right-2 top-1.5 text-slate-500 font-bold text-xs">%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center bg-slate-950 p-2.5 rounded border border-slate-800 mb-3">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Proyección Venta (Sin ITBIS):</span>
+                    <span id="modalProjectedCost" class="text-xl font-black text-emerald-400 tracking-tight">$0.00</span>
+                </div>
+                <button id="modalExportSingleBtn" data-perm="export" onclick="exportSingleOrder()" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] py-2 rounded font-bold transition-colors shadow-lg shadow-emerald-500/20 flex justify-center items-center space-x-1">
+                    <i data-lucide="file-spreadsheet" class="w-3 h-3"></i> <span>Descargar Plantilla Facturación</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="border border-slate-700 rounded-xl overflow-hidden shadow-inner bg-slate-900">
+          <div class="overflow-x-auto max-h-[35vh]">
+            <table class="w-full text-left text-xs whitespace-nowrap">
+              <thead class="bg-slate-950 text-slate-400 border-b border-slate-700 uppercase tracking-wider text-[10px] sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <th class="px-5 py-3 font-bold">Serie / Ref</th>
+                  <th class="px-5 py-3 font-bold">Marca</th>
+                  <th class="px-5 py-3 font-bold">Modelo</th>
+                  <th class="px-5 py-3 font-bold w-1/2">Descripción de Producto</th>
+                  <th class="px-5 py-3 font-bold text-right">Costo Base</th>
+                  <th id="modalThSim" class="px-5 py-3 font-bold text-right text-emerald-400">Transfer Price (Simulado)</th>
+                </tr>
+              </thead>
+              <tbody id="modalTableBody" class="divide-y divide-slate-800/50 text-slate-300"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-3 pointer-events-none"></div>
+
+  <!-- SCRIPT LÓGICO -->
+  <script>
+    lucide.createIcons();
+
+    let localDB = JSON.parse(localStorage.getItem('inventory_db')) || {};
+    let knownPOs = JSON.parse(localStorage.getItem('inventory_known_pos')) || [];
+
+    let rawInventoryData = [];
+    let filteredData = [];
+    let currentPage = 1;
+    const itemsPerPage = 50;
+    let charts = { brand: null, timeline: null };
+    let selectedBrands = [];
+    let selectedYears = []; 
+    let selectedMonths = [];
+    let currentModalPO = null; 
+    let currentSort = { column: 'year', direction: 'desc' };
+
+    const PERMISSION_KEYS = ['uploadFile', 'editNotes', 'export', 'deleteDB', 'manageUsers'];
+    const ROLE_PRESETS = {
+      ADMIN:  { uploadFile: true,  editNotes: true,  export: true,  deleteDB: true,  manageUsers: true  },
+      EDITOR: { uploadFile: true,  editNotes: true,  export: true,  deleteDB: false, manageUsers: false },
+      VIEWER: { uploadFile: false, editNotes: false, export: false, deleteDB: false, manageUsers: false }
+    };
+
+    let users = JSON.parse(localStorage.getItem('inventory_users')) || [];
+    let currentUser = null; 
+
+    async function sha256Hash(text) {
+      try {
+        if (window.crypto && window.crypto.subtle) {
+          const enc = new TextEncoder().encode(text);
+          const buf = await window.crypto.subtle.digest('SHA-256', enc);
+          return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+      } catch (err) {}
+      let hash = 0;
+      for (let i = 0; i < text.length; i++) { hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0; }
+      return 'fb' + Math.abs(hash).toString(16);
+    }
+
+    function saveUsers() { localStorage.setItem('inventory_users', JSON.stringify(users)); if (window.Sync) Sync.pushUsers(users); }
+    function findUser(username) { return users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase()); }
+
+    function hasPermission(key) {
+      if (!currentUser) return false;
+      if (currentUser.role === 'ADMIN') return true;
+      return !!(currentUser.permissions && currentUser.permissions[key]);
+    }
+
+    function initAuthScreen() {
+      const setupPanel = document.getElementById('setupPanel');
+      const loginPanel = document.getElementById('loginPanel');
+      if (users.length === 0) {
+        setupPanel.classList.remove('hidden');
+        loginPanel.classList.add('hidden');
+      } else {
+        setupPanel.classList.add('hidden');
+        loginPanel.classList.remove('hidden');
+        const savedSession = sessionStorage.getItem('inventory_session_user');
+        if (savedSession) {
+          const u = findUser(savedSession);
+          if (u) { loginAs(u); return; }
+        }
+      }
+    }
+
+    window.handleSetupSubmit = async function() {
+      const errEl = document.getElementById('setupError');
+      errEl.classList.add('hidden');
+      const username = document.getElementById('setupUser').value.trim();
+      const pass = document.getElementById('setupPass').value;
+      const pass2 = document.getElementById('setupPass2').value;
+
+      if (!username) return showAuthError(errEl, 'Escribe un nombre de usuario.');
+      if (pass.length < 4) return showAuthError(errEl, 'Mínimo 4 caracteres.');
+      if (pass !== pass2) return showAuthError(errEl, 'Las contraseñas no coinciden.');
+
+      const passwordHash = await sha256Hash(username.toLowerCase() + ':' + pass);
+      const adminUser = { username, passwordHash, role: 'ADMIN', permissions: { ...ROLE_PRESETS.ADMIN } };
+      users.push(adminUser);
+      saveUsers();
+      showToast(`Cuenta Administrador "${username}" creada.`, 'success');
+      loginAs(adminUser);
+    }
+
+    window.handleLoginSubmit = async function() {
+      const errEl = document.getElementById('loginError');
+      errEl.classList.add('hidden');
+      const username = document.getElementById('loginUser').value.trim();
+      const pass = document.getElementById('loginPass').value;
+      if (!username || !pass) return showAuthError(errEl, 'Requerido.');
+
+      const u = findUser(username);
+      if (!u) return showAuthError(errEl, 'Credenciales inválidas.');
+
+      const hash = await sha256Hash(u.username.toLowerCase() + ':' + pass);
+      if (hash !== u.passwordHash) return showAuthError(errEl, 'Credenciales inválidas.');
+
+      loginAs(u);
+    }
+
+    function showAuthError(el, msg) { el.innerText = msg; el.classList.remove('hidden'); }
+
+    function loginAs(user) {
+      currentUser = user;
+      sessionStorage.setItem('inventory_session_user', user.username);
+      document.getElementById('authScreen').classList.add('hidden');
+      document.getElementById('appContainer').classList.remove('hidden');
+      document.getElementById('appContainer').classList.add('flex');
+      
+      const badge = document.getElementById('userRoleBadge');
+      badge.innerText = user.role;
+      badge.className = user.role === 'ADMIN' ? 'bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded mr-2 border border-brand-500/30' : 'bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded mr-2 border border-emerald-500/30';
+
+      applyPermissionsUI();
+      startLive();
+    }
+
+    function startLive() {
+      if (!window.Sync || !Sync.enabled || window._liveOn) return; window._liveOn = true;
+      Sync.listen({
+        onNotes: (list) => {
+          list.forEach(n => { localDB[n.po] = { isRemoved: n.isRemoved, comment: n.comment };
+            const o = rawInventoryData.find(r => String(r.po) === String(n.po));
+            if (o) { o.isRemoved = n.isRemoved; o.customComment = n.comment; } });
+          localStorage.setItem('inventory_db', JSON.stringify(localDB));
+          const t = document.activeElement && document.activeElement.tagName;
+          if (rawInventoryData.length && t !== 'INPUT' && t !== 'TEXTAREA') applyFilters();
+        },
+        onInventory: (rows) => {
+          rows.forEach(o => { const d = localDB[o.po]; if (d) { o.isRemoved = d.isRemoved; o.customComment = d.comment; } });
+          rawInventoryData = rows; populateFilters(); applyFilters();
+          document.getElementById('uploadContainer').classList.add('hidden');
+          document.getElementById('dashboardContent').classList.remove('hidden');
+          if (hasPermission('export')) document.getElementById('exportBtn').removeAttribute('disabled');
+          showToast('Inventario actualizado por el equipo.', 'success');
+        }
+      });
+    }
+
+    window.handleLogout = function() {
+      sessionStorage.removeItem('inventory_session_user');
+      location.reload();
+    }
+
+    function applyPermissionsUI() {
+      document.getElementById('btnUploadLabel').style.display = hasPermission('uploadFile') ? 'flex' : 'none';
+      document.getElementById('exportBtn').style.display = hasPermission('export') ? 'flex' : 'none';
+      
+      const simWrap = document.getElementById('modalSimulatorWrapper');
+      const thSim = document.getElementById('modalThSim');
+      const modalExpBtn = document.getElementById('modalExportSingleBtn');
+
+      if (!hasPermission('editNotes') && !hasPermission('export')) {
+          if (simWrap) simWrap.classList.add('hidden');
+          if (thSim) thSim.classList.add('hidden');
+      } else {
+          if (simWrap) simWrap.classList.remove('hidden');
+          if (thSim) thSim.classList.remove('hidden');
+      }
+
+      if (hasPermission('export')) {
+          if (modalExpBtn) {
+            modalExpBtn.classList.remove('hidden');
+            modalExpBtn.classList.add('flex');
+          }
+      }
+
+      if (rawInventoryData.length) renderTable();
+    }
+
+    const formatCurr = (amount) => {
+      if (isNaN(amount) || amount === null) return "$0.00";
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    };
+
+    const showToast = (msg, type = 'info') => {
+      const colors = { info: 'bg-blue-600', success: 'bg-emerald-600', error: 'bg-rose-600' };
+      const icons = { info: 'info', success: 'check-circle', error: 'alert-circle' };
+      const toast = document.createElement('div');
+      toast.className = `flex items-center space-x-3 ${colors[type]} text-white text-xs font-semibold px-5 py-4 rounded-xl shadow-2xl animate-fade-in-up`;
+      toast.innerHTML = `<i data-lucide="${icons[type]}" class="w-5 h-5"></i><span>${msg}</span>`;
+      document.getElementById('toastContainer').appendChild(toast);
+      lucide.createIcons({root: toast});
+      setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 3000);
+    };
+
+    const DOM = {
+      fileIn: document.getElementById('fileInput'), btnText: document.getElementById('uploadBtnText'),
+      fStatus: document.getElementById('filterStatus'), fSearch: document.getElementById('filterSearch')
+    };
+
+    DOM.fileIn.addEventListener('change', handleFileUpload);
+    [DOM.fStatus, DOM.fSearch].forEach(el => el.addEventListener('input', () => { currentPage = 1; applyFilters(); }));
+
+    document.addEventListener('click', (e) => {
+        const ddnBrand = document.getElementById('brandDropdownContainer');
+        if(ddnBrand && !ddnBrand.contains(e.target)) {
+            document.getElementById('brandDropdownMenu').classList.add('hidden');
+        }
+        const ddnYear = document.getElementById('yearDropdownContainer');
+        if(ddnYear && !ddnYear.contains(e.target)) {
+            document.getElementById('yearDropdownMenu').classList.add('hidden');
+        }
+        const ddnMonth = document.getElementById('monthDropdownContainer');
+        if(ddnMonth && !ddnMonth.contains(e.target)) {
+            document.getElementById('monthDropdownMenu').classList.add('hidden');
+        }
+    });
+
+    window.toggleBrandDropdown = function() { document.getElementById('brandDropdownMenu').classList.toggle('hidden'); }
+    window.toggleYearDropdown = function() { document.getElementById('yearDropdownMenu').classList.toggle('hidden'); }
+    window.toggleMonthDropdown = function() { document.getElementById('monthDropdownMenu').classList.toggle('hidden'); }
+
+    (async () => {
+      try {
+        if (window.Sync && await Sync.init()) {
+          const ru = await Sync.getUsers();
+          if (ru.length) { users = ru; localStorage.setItem('inventory_users', JSON.stringify(users)); }
+        }
+      } catch (e) { console.warn('sync init', e); }
+      initAuthScreen();
+    })();
+
+    function getXmlTags(doc, tagName) {
+        let els = doc.getElementsByTagNameNS("*", tagName);
+        if(els.length > 0) return els;
+        els = doc.getElementsByTagName(tagName);
+        if(els.length > 0) return els;
+        const all = doc.getElementsByTagName("*");
+        const res = [];
+        for(let i=0; i<all.length; i++) {
+            if(all[i].localName === tagName || all[i].nodeName.includes(tagName)) res.push(all[i]);
+        }
+        return res;
+    }
+
+    function extractLinks(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    let linksMap = {};
+                    workbook.SheetNames.forEach(sheetName => {
+                        const sheet = workbook.Sheets[sheetName];
+                        if(!sheet['!ref']) return;
+                        const range = XLSX.utils.decode_range(sheet['!ref']);
+                        for(let R = range.s.r; R <= range.e.r; ++R) {
+                            for(let C = range.s.c; C <= range.e.c; ++C) {
+                                const cell = sheet[XLSX.utils.encode_cell({r: R, c: C})];
+                                if(cell && cell.v && cell.l && cell.l.Target) {
+                                    linksMap[String(cell.v).trim()] = cell.l.Target;
+                                }
+                            }
+                        }
+                    });
+                    resolve(linksMap);
+                } catch(err) { resolve({}); }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    function extractMasterData(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    let masterMap = {};
+                    let isMasterFile = false;
+                    let flatRecords = [];
+                    
+                    workbook.SheetNames.forEach(sn => {
+                        if (sn !== "Usuarios" && sn !== "Resumen_Ejecutivo") {
+                            const sheet = workbook.Sheets[sn];
+                            const rows = XLSX.utils.sheet_to_json(sheet);
+                            
+                            if (rows.length > 0 && ('PO / Orden' in rows[0] || 'Notas del Equipo' in rows[0] || 'Estado de Stock' in rows[0])) {
+                                isMasterFile = true;
+                                rows.forEach(r => {
+                                    let po = String(r['PO / Orden'] || r['PO'] || '').trim();
+                                    if(po && po !== 'undefined') {
+                                        flatRecords.push(r);
+                                        if (!masterMap[po]) {
+                                            masterMap[po] = {
+                                                isRemoved: String(r['Estado de Stock'] || r['Estado'] || '').includes('RETIRADO'),
+                                                customComment: r['Notas del Equipo'] || r['Mis Comentarios (Notas)'] || '',
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+
+                    let newUsersCount = 0;
+                    const usersSheetName = workbook.SheetNames.find(sn => sn === 'Usuarios');
+                    if (usersSheetName && hasPermission('manageUsers')) {
+                        const uRows = XLSX.utils.sheet_to_json(workbook.Sheets[usersSheetName]);
+                        uRows.forEach(r => {
+                            const uname = String(r['Usuario'] || '').trim();
+                            if (!uname) return;
+                            if (findUser(uname)) return;
+                            let perms = {};
+                            try { perms = JSON.parse(r['Permisos'] || '{}'); } catch (e2) { perms = {}; }
+                            users.push({ username: uname, passwordHash: String(r['PasswordHash'] || ''), role: String(r['Rol'] || 'VIEWER'), permissions: perms });
+                            newUsersCount++;
+                        });
+                        if (newUsersCount > 0) saveUsers();
+                    }
+
+                    resolve({ masterMap, newUsersCount, isMasterFile, flatRecords });
+                } catch(err) { resolve({ masterMap: {}, newUsersCount: 0, isMasterFile: false, flatRecords: [] }); }
+            }
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    async function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (!hasPermission('uploadFile')) {
+        showToast('Tu usuario no tiene permiso para cargar archivos.', 'error');
+        DOM.fileIn.value = '';
+        return;
+      }
+
+      DOM.btnText.innerText = "Sincronizando Archivo...";
+      
+      try {
+          const linksMap = await extractLinks(file);
+          const { masterMap, newUsersCount, isMasterFile, flatRecords } = await extractMasterData(file);
+
+          let ordersMap = {};
+          let currentUploadPOs = [];
+          let fromFlatFile = false;
+
+          if (isMasterFile && flatRecords && flatRecords.length > 0) {
+              fromFlatFile = true;
+              flatRecords.forEach(r => {
+                  let po = String(r['PO / Orden'] || r['PO'] || '').trim();
+                  if (!po || po === 'undefined' || po === 'null') return;
+
+                  if (!ordersMap[po]) {
+                      let rawYear = String(r['Año de Adquisición'] || r['Año'] || 'S/F').trim();
+                      let rawMonth = String(r['Mes de Ingreso'] || r['Mes'] || 'S/F').trim();
+                      let poRemarks = String(r['PO Remarks'] || '').trim();
+                      let costBase = parseFloat(String(r['Costo Base USD'] || r['Costo Unitario'] || r['Costo Total PO (Base)'] || '0').replace(/[^0-9.-]+/g, '')) || 0;
+                      let poLink = r['Enlace Original a PO'] || r['Enlace PO'] || null;
+                      if(poLink === 'Sin enlace') poLink = null;
+                      let brandStr = String(r['Marcas Asociadas'] || 'SIN MARCA').trim();
+
+                      ordersMap[po] = {
+                          po: po, year: rawYear, month: rawMonth, poRemarks: poRemarks, poLink: poLink,
+                          cost: 0, brands: new Set(brandStr !== 'SIN MARCA' ? brandStr.split(',').map(b=>b.trim()) : []), 
+                          details: [],
+                          fallbackItemCount: r['Cant. Ítems'] ? parseInt(r['Cant. Ítems']) : 1
+                      };
+                  }
+
+                  let serial = String(r['Serie Desglose'] || r['Serie / Ref'] || '-').trim();
+                  let model = String(r['Modelo Desglose'] || r['Modelo'] || '-').trim();
+                  let lineCost = parseFloat(String(r['Costo Unitario'] || r['Costo Base USD'] || '0').replace(/[^0-9.-]+/g, '')) || 0;
+                  
+                  if (serial !== '-' || model !== '-') {
+                      ordersMap[po].details.push({
+                          serial: serial,
+                          brand: String(r['Marca Desglose'] || r['Marca'] || '-'),
+                          model: model,
+                          description: String(r['Desc. Desglose'] || r['Descripción de Producto'] || '-'),
+                          cost: lineCost
+                      });
+                      ordersMap[po].cost += lineCost;
+                  } else {
+                      if(ordersMap[po].cost === 0) ordersMap[po].cost = lineCost;
+                  }
+              });
+          } 
+          else {
+              const zip = new JSZip();
+              await zip.loadAsync(file);
+              const files = Object.keys(zip.files);
+              
+              const defFileKey = files.find(k => k.match(/xl\/pivotCache\/pivotCacheDefinition\d+\.xml/));
+              const recFileKey = files.find(k => k.match(/xl\/pivotCache\/pivotCacheRecords\d+\.xml/));
+
+              let extractedRecords = [];
+
+              if (defFileKey && recFileKey) {
+                  const defText = await zip.file(defFileKey).async("text");
+                  const recText = await zip.file(recFileKey).async("text");
+                  const parser = new DOMParser();
+                  const defDoc = parser.parseFromString(defText, "text/xml");
+                  const recDoc = parser.parseFromString(recText, "text/xml");
+
+                  const fields = [];
+                  const cacheFields = getXmlTags(defDoc, "cacheField");
+                  
+                  for(let i=0; i<cacheFields.length; i++) {
+                      const cf = cacheFields[i];
+                      const name = cf.getAttribute("name");
+                      const sharedItems = [];
+                      const siNodes = getXmlTags(cf, "sharedItems");
+                      if(siNodes.length > 0) {
+                          const siNode = siNodes[0];
+                          for(let j=0; j<siNode.childNodes.length; j++) {
+                              const child = siNode.childNodes[j];
+                              if(child.nodeType !== 1) continue;
+                              const tag = child.localName || child.tagName;
+                              if(tag === 'm') sharedItems.push(null);
+                              else if(child.hasAttribute('v')) sharedItems.push(child.getAttribute('v'));
+                              else sharedItems.push(null);
+                          }
+                      }
+                      fields.push({ name, sharedItems });
+                  }
+
+                  const rNodes = getXmlTags(recDoc, "r");
+                  for(let i=0; i<rNodes.length; i++) {
+                      const rNode = rNodes[i];
+                      let rowData = {};
+                      let fieldIdx = 0;
+                      for(let j=0; j<rNode.childNodes.length; j++) {
+                          const child = rNode.childNodes[j];
+                          if(child.nodeType !== 1) continue;
+                          const tag = child.localName || child.tagName;
+                          const field = fields[fieldIdx];
+                          if(!field) { fieldIdx++; continue; }
+
+                          let val = null;
+                          if(tag === 'x') {
+                              const idx = parseInt(child.getAttribute('v'));
+                              val = field.sharedItems[idx];
+                          } else if(tag === 'm') { val = null;
+                          } else if(child.hasAttribute('v')) { val = child.getAttribute('v'); }
+                          
+                          rowData[field.name] = val;
+                          fieldIdx++;
+                      }
+                      extractedRecords.push(rowData);
+                  }
+              }
+
+              if (extractedRecords.length > 0) {
+                  extractedRecords.forEach(r => {
+                      let po = String(r['PO'] || r['Orden'] || 'N/A').trim();
+                      if (po === 'N/A' || po === '' || po === 'null') return;
+
+                      let cost = parseFloat(String(r['USD Cost'] || r['Cost'] || r['Local Cost'] || '0').replace(/[^0-9.-]+/g, '')) || 0;
+                      let brand = String(r['Brand'] || r['Marca'] || 'OTRO').toUpperCase().trim();
+                      let rawYear = String(r['ACQUISITION DATE (Year)'] || r['Years'] || r['Año'] || 'S/F').trim();
+                      
+                      let rawMonth = String(r['ACQUISITION DATE (Month)'] || r['Month'] || r['Mes'] || 'S/F').trim();
+                      if (rawMonth === 'S/F' && r['Acquisition Date']) {
+                          let dStr = String(r['Acquisition Date']);
+                          if (dStr.length >= 7 && dStr.includes('-')) {
+                              rawMonth = dStr.substring(5,7);
+                          }
+                      }
+                      
+                      let poRemarks = String(r['PO Remarks'] || '').trim();
+                      let desc = String(r['Product Description'] || r['Description'] || '-').trim();
+                      let serial = String(r['Serial'] || 'S/N').trim();
+                      let model = String(r['Model'] || 'N/A').trim();
+                      
+                      if(rawYear === 'S/F' && r['Acquisition Date']) {
+                          rawYear = String(r['Acquisition Date']).substring(0,4);
+                      }
+
+                      if (!ordersMap[po]) {
+                          ordersMap[po] = {
+                              po: po, year: rawYear, month: rawMonth, poRemarks: poRemarks || desc, poLink: linksMap[po] || null,
+                              cost: 0, brands: new Set(), details: []
+                          };
+                      }
+
+                      if(ordersMap[po].year === 'S/F' && rawYear !== 'S/F') ordersMap[po].year = rawYear;
+                      if(ordersMap[po].month === 'S/F' && rawMonth !== 'S/F') ordersMap[po].month = rawMonth;
+                      if(!ordersMap[po].poRemarks && poRemarks) ordersMap[po].poRemarks = poRemarks;
+
+                      ordersMap[po].cost += cost;
+                      if(brand && brand !== 'OTRO' && brand !== 'MIXTA' && brand !== 'NULL' && !brand.includes('MULTIPLE')) {
+                          ordersMap[po].brands.add(brand);
+                      }
+
+                      if (cost > 0 || serial !== 'S/N') {
+                          ordersMap[po].details.push({ serial, brand, model, description: desc, cost });
+                      }
+                  });
+              }
+          }
+
+          rawInventoryData = Object.values(ordersMap).map(o => {
+              currentUploadPOs.push(o.po);
+              let bArr = Array.from(o.brands).filter(b => b && !b.includes('MULTIPLE'));
+              
+              let dbData = localDB[o.po] || {};
+              let isNew = knownPOs.length > 0 && !knownPOs.includes(o.po);
+              let isRemoved = masterMap[o.po] ? masterMap[o.po].isRemoved : (dbData.isRemoved || false);
+              let customComment = masterMap[o.po] && masterMap[o.po].customComment ? masterMap[o.po].customComment : (dbData.comment || '');
+
+              let finalItemCount = o.details.length > 0 ? o.details.length : (o.fallbackItemCount || 1);
+
+              return {
+                  po: o.po, year: o.year, month: o.month, poRemarks: o.poRemarks || '-', poLink: o.poLink, cost: o.cost,
+                  brandStr: bArr.length > 0 ? bArr.join(', ') : 'SIN MARCA',
+                  itemCount: finalItemCount,
+                  details: o.details,
+                  isNew: isNew,
+                  isRemoved: isRemoved,
+                  customComment: customComment === '-' ? '' : customComment
+              };
+          }).filter(r => r.cost > 0 || r.details.length > 0 || fromFlatFile);
+
+          if (rawInventoryData.length === 0) throw new Error("No se encontraron registros válidos.");
+
+          let updatedKnownPOs = Array.from(new Set([...knownPOs, ...currentUploadPOs]));
+          localStorage.setItem('inventory_known_pos', JSON.stringify(updatedKnownPOs));
+          knownPOs = updatedKnownPOs;
+
+          let syncMsg = fromFlatFile ? 'Se ha cargado la base colaborativa.' : 'Archivo original procesado.';
+          showToast(`Sincronización Completada. ${syncMsg}`, 'success');
+          
+          if (window.Sync) Sync.pushInventory(rawInventoryData).then(()=>showToast('Base compartida con el equipo.','success')).catch(()=>{});
+          populateFilters();
+          applyFilters();
+
+          document.getElementById('uploadContainer').classList.add('hidden');
+          document.getElementById('dashboardContent').classList.remove('hidden');
+          if (hasPermission('export')) document.getElementById('exportBtn').removeAttribute('disabled');
+
+      } catch(err) {
+          console.error(err);
+          showToast("Error al procesar el archivo.", 'error');
+      } finally {
+          DOM.btnText.innerText = "Cargar BD";
+          DOM.fileIn.value = '';
+      }
+    }
+
+    // ==========================================
+    // ORDENAMIENTO (SORTING)
+    // ==========================================
+    window.sortBy = function(column) {
+        if(currentSort.column === column) {
+            currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort.column = column;
+            currentSort.direction = 'asc';
+        }
+        performSort();
+        currentPage = 1;
+        renderTable();
+        updateSortUI();
+    }
+
+    function performSort() {
+        if(!currentSort || !currentSort.column) return;
+        filteredData.sort((a, b) => {
+            let valA = a[currentSort.column];
+            let valB = b[currentSort.column];
+
+            if(currentSort.column === 'brand') { valA = a.brandStr; valB = b.brandStr; }
+            if(currentSort.column === 'remarks') { valA = a.poRemarks; valB = b.poRemarks; }
+            if(currentSort.column === 'units') { valA = a.itemCount; valB = b.itemCount; }
+
+            if(currentSort.column === 'month') {
+                const map = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12, 'ene':1,'abr':4,'ago':8,'dic':12};
+                valA = typeof valA === 'string' ? (map[valA.substring(0,3).toLowerCase()] || 99) : 99;
+                valB = typeof valB === 'string' ? (map[valB.substring(0,3).toLowerCase()] || 99) : 99;
+            }
+
+            if (typeof valA === 'string' && typeof valB === 'string') {
+                let cmp = valA.localeCompare(valB, undefined, {numeric: true, sensitivity: 'base'});
+                return currentSort.direction === 'asc' ? cmp : -cmp;
+            }
+
+            if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
+
+    function updateSortUI() {
+        document.querySelectorAll('.sort-icon').forEach(icon => {
+            icon.innerHTML = '<i data-lucide="arrow-up-down" class="w-3 h-3 opacity-30 group-hover:opacity-100 transition-opacity"></i>';
+        });
+        
+        const activeIcon = document.getElementById('sort-icon-' + currentSort.column);
+        if(activeIcon) {
+            if(currentSort.direction === 'asc') {
+                activeIcon.innerHTML = '<i data-lucide="arrow-up" class="w-3 h-3 text-brand-400"></i>';
+            } else {
+                activeIcon.innerHTML = '<i data-lucide="arrow-down" class="w-3 h-3 text-brand-400"></i>';
+            }
+        }
+        lucide.createIcons();
+    }
+
+    // ==========================================
+    // LÓGICA DE TABLA Y FILTROS
+    // ==========================================
+    window.saveToDB = function(po, isRemoved, comment) {
+        localDB[po] = { isRemoved: isRemoved, comment: comment };
+        localStorage.setItem('inventory_db', JSON.stringify(localDB));
+        if (window.Sync) Sync.pushNote(po, isRemoved, comment, currentUser && currentUser.username);
+    }
+
+    window.toggleRemove = function(poNumber) {
+        if (!hasPermission('editNotes')) { showToast('No tienes permiso para editar el inventario.', 'error'); applyFilters(); return; }
+        const order = rawInventoryData.find(o => String(o.po) === String(poNumber));
+        if (order) {
+            order.isRemoved = !order.isRemoved;
+            if(order.isNew) order.isNew = false; 
+            saveToDB(order.po, order.isRemoved, order.customComment);
+            applyFilters();
+        }
+    }
+
+    window.updateComment = function(poNumber, value) {
+        if (!hasPermission('editNotes')) { showToast('No tienes permiso para editar notas.', 'error'); applyFilters(); return; }
+        const order = rawInventoryData.find(o => String(o.po) === String(poNumber));
+        if (order) {
+            order.customComment = value;
+            saveToDB(order.po, order.isRemoved, order.customComment);
+        }
+    }
+
+    function populateFilters() {
+      const yearsArr = [...new Set(rawInventoryData.map(d => d.year))].filter(v => v && v !== 'S/F' && v !== 'null').sort();
+      const yearMenu = document.getElementById('yearDropdownMenu');
+      yearMenu.innerHTML = `<label class="flex items-center space-x-2 p-2 hover:bg-slate-800 rounded cursor-pointer border-b border-slate-700 mb-1"><input type="checkbox" value="ALL" class="year-cb form-checkbox bg-slate-950 border-slate-700 rounded text-brand-500" checked onchange="handleYearChange(this)"><span class="text-xs font-bold text-brand-400">Seleccionar Todos</span></label>`;
+      yearsArr.forEach(y => { yearMenu.innerHTML += `<label class="flex items-center space-x-2 p-1.5 hover:bg-slate-800 rounded cursor-pointer"><input type="checkbox" value="${y}" class="year-cb form-checkbox bg-slate-950 border-slate-700 rounded text-brand-500" checked onchange="handleYearChange(this)"><span class="text-xs text-slate-300">${y}</span></label>`; });
+      updateYearLabel();
+
+      const monthsArr = [...new Set(rawInventoryData.map(d => d.month))].filter(v => v && v !== 'S/F' && v !== 'null').sort();
+      const monthMenu = document.getElementById('monthDropdownMenu');
+      monthMenu.innerHTML = `<label class="flex items-center space-x-2 p-2 hover:bg-slate-800 rounded cursor-pointer border-b border-slate-700 mb-1"><input type="checkbox" value="ALL" class="month-cb form-checkbox bg-slate-950 border-slate-700 rounded text-brand-500" checked onchange="handleMonthChange(this)"><span class="text-xs font-bold text-brand-400">Seleccionar Todos</span></label>`;
+      monthsArr.forEach(m => { monthMenu.innerHTML += `<label class="flex items-center space-x-2 p-1.5 hover:bg-slate-800 rounded cursor-pointer"><input type="checkbox" value="${m}" class="month-cb form-checkbox bg-slate-950 border-slate-700 rounded text-brand-500" checked onchange="handleMonthChange(this)"><span class="text-xs text-slate-300">${m}</span></label>`; });
+      updateMonthLabel();
+
+      let allBrands = new Set();
+      rawInventoryData.forEach(d => { if (d.brandStr !== 'SIN MARCA') d.brandStr.split(',').forEach(b => allBrands.add(b.trim())); });
+      const brandArr = Array.from(allBrands).sort();
+      
+      const brandMenu = document.getElementById('brandDropdownMenu');
+      brandMenu.innerHTML = `<label class="flex items-center space-x-2 p-2 hover:bg-slate-800 rounded cursor-pointer border-b border-slate-700 mb-1"><input type="checkbox" value="ALL" class="brand-cb form-checkbox bg-slate-950 border-slate-700 rounded text-brand-500" checked onchange="handleBrandChange(this)"><span class="text-xs font-bold text-brand-400">Seleccionar Todas</span></label>`;
+      brandArr.forEach(b => { brandMenu.innerHTML += `<label class="flex items-center space-x-2 p-1.5 hover:bg-slate-800 rounded cursor-pointer"><input type="checkbox" value="${b}" class="brand-cb form-checkbox bg-slate-950 border-slate-700 rounded text-brand-500" checked onchange="handleBrandChange(this)"><span class="text-xs text-slate-300">${b}</span></label>`; });
+      updateBrandLabel();
+    }
+
+    window.handleYearChange = function(cb) {
+        const checkboxes = document.querySelectorAll('.year-cb');
+        if(cb.value === 'ALL') { checkboxes.forEach(c => c.checked = cb.checked); } 
+        else {
+            const allCb = document.querySelector('.year-cb[value="ALL"]');
+            const anyUnchecked = Array.from(checkboxes).some(c => c.value !== 'ALL' && !c.checked);
+            if (allCb) allCb.checked = !anyUnchecked;
+        }
+        updateYearLabel(); currentPage = 1; applyFilters();
+    }
+
+    function updateYearLabel() {
+        const checkboxes = document.querySelectorAll('.year-cb:checked');
+        const vals = Array.from(checkboxes).map(c => c.value);
+        selectedYears = vals;
+        const label = document.getElementById('yearDropdownLabel');
+        const totalOpts = document.querySelectorAll('.year-cb').length - 1; 
+        if(vals.includes('ALL') || (vals.length === totalOpts && totalOpts > 0)) { label.innerText = 'Todos los años'; label.classList.replace('text-brand-400', 'text-slate-300'); } 
+        else if(vals.length === 0) { label.innerText = 'Ninguno seleccionado'; label.classList.replace('text-brand-400', 'text-rose-400'); } 
+        else { label.innerText = `${vals.length} año(s) seleccionados`; label.classList.replace('text-slate-300', 'text-brand-400'); label.classList.replace('text-rose-400', 'text-brand-400'); }
+    }
+
+    window.handleMonthChange = function(cb) {
+        const checkboxes = document.querySelectorAll('.month-cb');
+        if(cb.value === 'ALL') { checkboxes.forEach(c => c.checked = cb.checked); } 
+        else {
+            const allCb = document.querySelector('.month-cb[value="ALL"]');
+            const anyUnchecked = Array.from(checkboxes).some(c => c.value !== 'ALL' && !c.checked);
+            if (allCb) allCb.checked = !anyUnchecked;
+        }
+        updateMonthLabel(); currentPage = 1; applyFilters();
+    }
+
+    function updateMonthLabel() {
+        const checkboxes = document.querySelectorAll('.month-cb:checked');
+        const vals = Array.from(checkboxes).map(c => c.value);
+        selectedMonths = vals;
+        const label = document.getElementById('monthDropdownLabel');
+        const totalOpts = document.querySelectorAll('.month-cb').length - 1; 
+        if(vals.includes('ALL') || (vals.length === totalOpts && totalOpts > 0)) { label.innerText = 'Todos los meses'; label.classList.replace('text-brand-400', 'text-slate-300'); } 
+        else if(vals.length === 0) { label.innerText = 'Ninguno seleccionado'; label.classList.replace('text-brand-400', 'text-rose-400'); } 
+        else { label.innerText = `${vals.length} mes(es) sel.`; label.classList.replace('text-slate-300', 'text-brand-400'); label.classList.replace('text-rose-400', 'text-brand-400'); }
+    }
+
+    window.handleBrandChange = function(cb) {
+        const checkboxes = document.querySelectorAll('.brand-cb');
+        if(cb.value === 'ALL') { checkboxes.forEach(c => c.checked = cb.checked); } 
+        else {
+            const allCb = document.querySelector('.brand-cb[value="ALL"]');
+            const anyUnchecked = Array.from(checkboxes).some(c => c.value !== 'ALL' && !c.checked);
+            if (allCb) allCb.checked = !anyUnchecked;
+        }
+        updateBrandLabel(); currentPage = 1; applyFilters();
+    }
+
+    function updateBrandLabel() {
+        const checkboxes = document.querySelectorAll('.brand-cb:checked');
+        const vals = Array.from(checkboxes).map(c => c.value);
+        selectedBrands = vals;
+        const label = document.getElementById('brandDropdownLabel');
+        const totalOpts = document.querySelectorAll('.brand-cb').length - 1; 
+        if(vals.includes('ALL') || (vals.length === totalOpts && totalOpts > 0)) { label.innerText = 'Todas las marcas'; label.classList.replace('text-brand-400', 'text-slate-300'); } 
+        else if(vals.length === 0) { label.innerText = 'Ninguna seleccionada'; label.classList.replace('text-brand-400', 'text-rose-400'); } 
+        else { label.innerText = `${vals.length} marca(s) seleccionadas`; label.classList.replace('text-slate-300', 'text-brand-400'); label.classList.replace('text-rose-400', 'text-brand-400'); }
+    }
+
+    function applyFilters() {
+      const fs = DOM.fStatus.value, sq = DOM.fSearch.value.toLowerCase();
+      const noBrandsSelected = selectedBrands.length === 0; const allBrandsSelected = selectedBrands.includes('ALL');
+      const noYearsSelected = selectedYears.length === 0; const allYearsSelected = selectedYears.includes('ALL');
+      const noMonthsSelected = selectedMonths.length === 0; const allMonthsSelected = selectedMonths.includes('ALL');
+
+      filteredData = rawInventoryData.filter(i => {
+        let statusMatch = true;
+        if (fs === 'ACTIVE') statusMatch = !i.isRemoved;
+        if (fs === 'REMOVED') statusMatch = i.isRemoved;
+        if (fs === 'NEW') statusMatch = i.isNew;
+        let brandMatch = allBrandsSelected || (!noBrandsSelected && selectedBrands.some(sb => i.brandStr.includes(sb)));
+        let yearMatch = allYearsSelected || (!noYearsSelected && selectedYears.includes(i.year));
+        let monthMatch = allMonthsSelected || (!noMonthsSelected && selectedMonths.includes(i.month));
+
+        return statusMatch && brandMatch && yearMatch && monthMatch &&
+               (!sq || i.po.toLowerCase().includes(sq) || i.poRemarks.toLowerCase().includes(sq) || i.brandStr.toLowerCase().includes(sq) || (i.customComment && i.customComment.toLowerCase().includes(sq)));
+      });
+      
+      if(typeof performSort === 'function') performSort();
+      updateCalculations();
+      renderTable();
+      if(typeof updateSortUI === 'function') updateSortUI();
+    }
+
+    function updateCalculations() {
+      let tCost = 0, tUnits = 0, brands = new Set();
+      filteredData.forEach(i => { 
+          tCost += i.cost; tUnits += i.itemCount; 
+          if(i.brandStr !== 'SIN MARCA') i.brandStr.split(',').forEach(b => brands.add(b.trim())); 
+      });
+
+      document.getElementById('kpiTotalCost').innerText = formatCurr(tCost);
+      document.getElementById('kpiTotalOrders').innerText = filteredData.length.toLocaleString();
+      document.getElementById('kpiTotalUnits').innerText = tUnits.toLocaleString();
+      document.getElementById('kpiBrandCount').innerText = brands.size;
+      
+      if (document.getElementById('exportCountLabel')) document.getElementById('exportCountLabel').innerText = filteredData.length.toLocaleString();
+      renderCharts();
+    }
+
+    function changePage(dir) {
+      const maxPage = Math.ceil(filteredData.length / itemsPerPage) || 1;
+      currentPage = Math.max(1, Math.min(currentPage + dir, maxPage));
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('inventoryTableBody');
+      tbody.innerHTML = '';
+      if (!filteredData.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-12 text-slate-500 font-medium">No hay datos que coincidan con los filtros</td></tr>`;
+        document.getElementById('pageInfoTag').innerText = `0 Órdenes`;
+        return;
+      }
+
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = Math.min(start + itemsPerPage, filteredData.length);
+      document.getElementById('pageInfoTag').innerText = `${start + 1} - ${end} de ${filteredData.length}`;
+      document.getElementById('btnPrevPage').disabled = currentPage === 1;
+      document.getElementById('btnNextPage').disabled = end === filteredData.length;
+
+      const canEdit = hasPermission('editNotes');
+
+      filteredData.slice(start, end).forEach(item => {
+        const safePo = String(item.po).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+        const poBadge = item.poLink 
+          ? `<a href="${item.poLink}" target="_blank" onclick="event.stopPropagation()" class="flex items-center space-x-1 px-2 py-1 bg-brand-900/40 text-brand-400 hover:text-white hover:bg-brand-600 rounded border border-brand-500/30 transition-colors w-max shadow-sm"><i data-lucide="external-link" class="w-3 h-3"></i><span class="font-bold underline decoration-brand-500/50">${item.po}</span></a>`
+          : `<span class="px-2 py-1 bg-slate-800 text-slate-400 rounded border border-slate-700 w-max inline-block font-mono text-[11px]">${item.po}</span>`;
+
+        const newLabel = item.isNew && !item.isRemoved ? `<span class="bg-brand-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded ml-2 uppercase animate-pulse">Nuevo</span>` : '';
+
+        tbody.insertAdjacentHTML('beforeend', `
+          <tr class="hover-row border-b border-slate-800/40 ${item.isRemoved ? 'opacity-40 grayscale' : ''}" ondblclick="openPoDetails('${safePo}')">
+            <td class="px-5 py-4 text-center" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()">
+               <input type="checkbox" class="w-4 h-4 rounded border-slate-700 text-brand-500 bg-slate-900 disabled:opacity-30 disabled:cursor-not-allowed" onchange="toggleRemove('${safePo}')" ${item.isRemoved ? 'checked' : ''} ${canEdit ? '' : 'disabled title="Sin permiso para editar"'} />
+            </td>
+            <td class="px-4 py-4 font-bold text-slate-400">${item.year}</td>
+            <td class="px-4 py-4 font-bold text-slate-400">${item.month}</td>
+            <td class="px-4 py-4 flex items-center mt-1">${poBadge} ${newLabel}</td>
+            <td class="px-4 py-4"><span class="text-[10px] text-brand-400 font-bold uppercase tracking-wider">${item.brandStr}</span></td>
+            <td class="px-4 py-4"><div class="max-w-[200px] truncate text-[11px] text-slate-400 whitespace-normal line-clamp-2" title="${item.poRemarks}">${item.poRemarks}</div></td>
+            <td class="px-4 py-4" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()">
+               <input type="text" value="${item.customComment || ''}" onchange="updateComment('${safePo}', this.value)" class="w-full bg-slate-900/50 border border-slate-700 text-slate-200 text-[11px] rounded-md px-2.5 py-1.5 focus:border-brand-500 focus:bg-slate-800 outline-none transition-all placeholder-slate-600 disabled:opacity-40 disabled:cursor-not-allowed" placeholder="Escribir nota..." ${canEdit ? '' : 'disabled title="Sin permiso para editar"'} />
+            </td>
+            <td class="px-4 py-4 text-center font-mono text-[11px] text-slate-500"><span class="bg-slate-800 px-2 py-1 rounded">${item.itemCount}</span></td>
+            <td class="px-5 py-4 text-right text-emerald-400 font-bold text-sm">${formatCurr(item.cost)}</td>
+          </tr>
+        `);
+      });
+      lucide.createIcons({root: tbody});
+    }
+
+    // ==========================================
+    // MODAL DE DESGLOSE / SIMULADOR FACTURACIÓN
+    // ==========================================
+    window.openPoDetails = function(poNumber) {
+        const order = rawInventoryData.find(o => String(o.po) === String(poNumber));
+        if (!order) return showToast("No se localizó la información de esta orden.", "error");
+
+        currentModalPO = poNumber;
+        document.getElementById('modalPoTitle').innerText = order.po;
+        document.getElementById('modalTotalItems').innerText = order.itemCount || 1;
+        document.getElementById('modalTotalCost').innerText = formatCurr(order.cost);
+        document.getElementById('modalBrands').innerText = order.brandStr || 'SIN MARCA';
+        document.getElementById('modalPoRemarks').innerText = order.poRemarks || '-';
+        
+        const simWrap = document.getElementById('modalSimulatorWrapper');
+        const thSim = document.getElementById('modalThSim');
+        
+        if (!hasPermission('editNotes') && !hasPermission('export')) {
+            simWrap.classList.add('hidden');
+            thSim.classList.add('hidden');
+        } else {
+            simWrap.classList.remove('hidden');
+            thSim.classList.remove('hidden');
+            document.getElementById('modalCalcMargin').value = 0;
+            document.getElementById('modalCalcDiscount').value = 0;
+        }
+
+        renderModalTable();
+
+        const modal = document.getElementById('poModal');
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+    }
+
+    window.renderModalTable = function() {
+        if (!currentModalPO) return;
+        const order = rawInventoryData.find(o => String(o.po) === String(currentModalPO));
+        if(!order) return;
+
+        const canSim = hasPermission('editNotes') || hasPermission('export');
+        const mPct = canSim ? (parseFloat(document.getElementById('modalCalcMargin').value) || 0) : 0;
+        const dPct = canSim ? (parseFloat(document.getElementById('modalCalcDiscount').value) || 0) : 0;
+
+        if (canSim) {
+            const projTotal = order.cost * (1 + mPct/100) * (1 - dPct/100);
+            document.getElementById('modalProjectedCost').innerText = formatCurr(projTotal);
+        }
+
+        let htmlRows = '';
+        if (order.details && order.details.length > 0) {
+            order.details.forEach(item => {
+                let pCost = item.cost * (1 + mPct/100) * (1 - dPct/100);
+                htmlRows += `
+                    <tr class="hover:bg-slate-800/60 border-b border-slate-700/50 transition-colors">
+                        <td class="px-5 py-3 font-mono text-[11px] text-slate-400">${item.serial || 'S/N'}</td>
+                        <td class="px-5 py-3 font-bold text-[10px] text-brand-400 uppercase tracking-wider">${item.brand || '-'}</td>
+                        <td class="px-5 py-3 text-slate-200 text-xs">${item.model || '-'}</td>
+                        <td class="px-5 py-3"><div class="max-w-[400px] truncate whitespace-normal line-clamp-2 text-[11px] text-slate-400" title="${item.description}">${item.description || '-'}</div></td>
+                        <td class="px-5 py-3 text-right text-slate-200">${formatCurr(item.cost)}</td>
+                        ${canSim ? `<td class="px-5 py-3 text-right text-emerald-400 font-bold">${formatCurr(pCost)}</td>` : ''}
+                    </tr>
+                `;
+            });
+        } else {
+            let pCost = order.cost * (1 + mPct/100) * (1 - dPct/100);
+            htmlRows = `
+                <tr class="hover:bg-slate-800/60 border-b border-slate-700/50 transition-colors bg-slate-900/50">
+                    <td class="px-5 py-3 font-mono text-[11px] text-slate-500">Consolidado</td>
+                    <td class="px-5 py-3 font-bold text-[10px] text-brand-400 uppercase tracking-wider">${order.brandStr || 'MIXTA'}</td>
+                    <td class="px-5 py-3 text-slate-400 text-xs text-center">-</td>
+                    <td class="px-5 py-3"><div class="max-w-[400px] truncate whitespace-normal line-clamp-2 text-[11px] text-slate-400" title="${order.poRemarks}">No hay descripción individual</div></td>
+                    <td class="px-5 py-3 text-right text-slate-200">${formatCurr(order.cost)}</td>
+                    ${canSim ? `<td class="px-5 py-3 text-right text-emerald-400 font-bold">${formatCurr(pCost)}</td>` : ''}
+                </tr>
+            `;
+        }
+        document.getElementById('modalTableBody').innerHTML = htmlRows;
+    }
+
+    // --- GENERADOR DE FACTURA INDIVIDUAL ---
+    window.exportSingleOrder = function() {
+        if (!hasPermission('export')) return showToast('No tienes permiso para exportar.', 'error');
+        if (!currentModalPO) return;
+        const order = rawInventoryData.find(o => String(o.po) === String(currentModalPO));
+        if(!order) return;
+
+        const mPct = parseFloat(document.getElementById('modalCalcMargin').value) || 0;
+        const dPct = parseFloat(document.getElementById('modalCalcDiscount').value) || 0;
+
+        let groupedItems = {};
+        
+        if (order.details && order.details.length > 0) {
+            order.details.forEach(item => {
+                let pCost = item.cost * (1 + mPct/100) * (1 - dPct/100);
+                let key = `${item.brand}|${item.model}|${item.description}|${pCost}`;
+                
+                if (!groupedItems[key]) {
+                    groupedItems[key] = {
+                        brand: item.brand || 'OTRO',
+                        model: item.model || '-',
+                        description: item.description || '-',
+                        cost: pCost,
+                        cant: 0,
+                        serials: []
+                    };
+                }
+                groupedItems[key].cant += 1;
+                if (item.serial && item.serial !== 'S/N' && item.serial !== '-') {
+                    groupedItems[key].serials.push(item.serial);
+                }
+            });
+        } else {
+            let pCost = order.cost * (1 + mPct/100) * (1 - dPct/100);
+            groupedItems['consolidated'] = {
+                brand: order.brandStr,
+                model: 'N/A',
+                description: order.poRemarks,
+                cost: pCost,
+                cant: order.itemCount || 1,
+                serials: []
+            };
+        }
+
+        let aoa = [
+            ["FACTURA / REPORTE DE ORDEN: " + order.po],
+            ["Fecha de Generación:", new Date().toLocaleDateString('es-DO')],
+            [],
+            ["Modelo", "Código", "Descripción", "Transfer Price", "Cant.", "Total"]
+        ];
+
+        let rowIndex = 4;
+        let subtotal = 0;
+
+        Object.values(groupedItems).forEach(g => {
+            let rowTotal = g.cost * g.cant;
+            subtotal += rowTotal;
+            
+            aoa.push([
+                g.brand,
+                g.model,
+                g.description,
+                g.cost,
+                g.cant,
+                rowTotal
+            ]);
+            rowIndex++;
+            
+            if (g.serials.length > 0) {
+                g.serials.forEach(sn => {
+                    aoa.push([
+                        "", "", "Serie / Ref: " + sn, "", "", ""  
+                    ]);
+                    rowIndex++;
+                });
+            }
+        });
+
+        let itbis = subtotal * 0.18;
+        let totalGeneral = subtotal + itbis;
+
+        let totalPedidoRow = rowIndex;
+        aoa.push(["TOTAL PEDIDO : =>", "", "", "", "", subtotal]);
+        rowIndex++;
+
+        aoa.push([]); rowIndex++;
+
+        let subtotalRow = rowIndex;
+        aoa.push(["", "", "", "SUBTOTAL", "$", subtotal]); rowIndex++;
+        
+        let itbisRow = rowIndex;
+        aoa.push(["", "", "", "ITBIS (18%)", "$", itbis]); rowIndex++;
+        
+        let totalRow = rowIndex;
+        aoa.push(["", "", "", "TOTAL", "$", totalGeneral]);
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+        const HEADER_STYLE = {
+            fill: { fgColor: { rgb: "FF6E7B15" } }, 
+            font: { color: { rgb: "FFFFFFFF" }, bold: true },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: { top: {style:'thin', color:{rgb:'FFFFFFFF'}}, bottom: {style:'thin', color:{rgb:'FFFFFFFF'}}, left: {style:'thin', color:{rgb:'FFFFFFFF'}}, right: {style:'thin', color:{rgb:'FFFFFFFF'}} }
+        };
+
+        const ITEM_STYLE = {
+            fill: { fgColor: { rgb: "FF303030" } }, 
+            font: { color: { rgb: "FFFFFFFF" } },
+            alignment: { horizontal: "center", vertical: "center", wrapText: true },
+            border: { top: {style:'thin', color:{rgb:'FFFFFFFF'}}, bottom: {style:'thin', color:{rgb:'FFFFFFFF'}}, left: {style:'thin', color:{rgb:'FFFFFFFF'}}, right: {style:'thin', color:{rgb:'FFFFFFFF'}} }
+        };
+
+        const DESC_STYLE = {
+            ...ITEM_STYLE,
+            alignment: { horizontal: "left", vertical: "center", wrapText: true }
+        };
+
+        const TOTAL_PEDIDO_STYLE = {
+            fill: { fgColor: { rgb: "FF385D38" } }, 
+            font: { color: { rgb: "FFFFFFFF" }, bold: true },
+            alignment: { horizontal: "right", vertical: "center" },
+            border: { top: {style:'thin', color:{rgb:'FFFFFFFF'}}, bottom: {style:'thin', color:{rgb:'FFFFFFFF'}}, left: {style:'thin', color:{rgb:'FFFFFFFF'}}, right: {style:'thin', color:{rgb:'FFFFFFFF'}} }
+        };
+        
+        const TOTAL_PEDIDO_VALUE_STYLE = {
+            ...TOTAL_PEDIDO_STYLE,
+            numFmt: '#,##0.00'
+        };
+
+        const BOTTOM_LABEL_STYLE = {
+            font: { bold: true },
+            alignment: { horizontal: "right", vertical: "center" }
+        };
+
+        const BOTTOM_VALUE_STYLE = {
+            font: { bold: false },
+            alignment: { horizontal: "right", vertical: "center" },
+            numFmt: '#,##0.00'
+        };
+
+        for (let r = 0; r <= totalRow; r++) {
+            for (let c = 0; c < 6; c++) {
+                let cellRef = XLSX.utils.encode_cell({r: r, c: c});
+                if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' }; 
+                
+                let cell = ws[cellRef];
+                
+                if (r === 3) {
+                    cell.s = HEADER_STYLE;
+                } else if (r > 3 && r < totalPedidoRow) {
+                    if (c === 2) cell.s = DESC_STYLE;
+                    else cell.s = ITEM_STYLE;
+                    
+                    if ((c === 3 || c === 5) && typeof cell.v === 'number') {
+                        cell.s.numFmt = '"$"#,##0.00';
+                    }
+                } else if (r === totalPedidoRow) {
+                    if (c < 5) cell.s = TOTAL_PEDIDO_STYLE;
+                    else {
+                        cell.s = TOTAL_PEDIDO_VALUE_STYLE;
+                        cell.z = '#,##0.00';
+                    }
+                } else if (r >= subtotalRow && r <= totalRow) {
+                    if (c === 3) cell.s = BOTTOM_LABEL_STYLE;
+                    if (c === 4) cell.s = { ...BOTTOM_LABEL_STYLE, alignment: { horizontal: "right" }}; 
+                    if (c === 5 && typeof cell.v === 'number') {
+                        cell.s = BOTTOM_VALUE_STYLE;
+                        cell.z = '#,##0.00'; 
+                    }
+                }
+            }
+        }
+
+        ws['!merges'] = [
+            { s: { r: totalPedidoRow, c: 0 }, e: { r: totalPedidoRow, c: 4 } }
+        ];
+
+        ws['!cols'] = [
+            {wch: 15}, 
+            {wch: 20}, 
+            {wch: 65}, 
+            {wch: 18}, 
+            {wch: 10}, 
+            {wch: 18}  
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, `Facturacion_${order.po}`);
+        XLSX.writeFile(wb, `Facturacion_PO_${order.po}.xlsx`);
+        showToast(`Reporte de facturación agrupado y formateado con éxito.`, 'success');
+    }
+
+    window.closeModal = function() {
+        const modal = document.getElementById('poModal');
+        modal.classList.add('hidden'); modal.classList.remove('flex');
+    }
+
+    document.addEventListener('keydown', function(event) { if (event.key === "Escape") { closeModal(); closeExportModal(); }});
+
+    function renderCharts() {
+      try {
+        const gCtx = id => document.getElementById(id).getContext('2d');
+        const gOpt = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 10, family: 'sans-serif' } } } } };
+
+        let yData = {}; filteredData.forEach(d => { if(d.cost > 0 && d.year !== 'null') yData[d.year] = (yData[d.year] || 0) + d.cost; });
+        let yLabels = Object.keys(yData).sort();
+        if(!yLabels.length) { yLabels = ['-']; yData['-'] = 0; }
+        
+        if(charts.timeline) charts.timeline.destroy();
+        charts.timeline = new Chart(gCtx('timelineChart'), { 
+          type: 'bar', 
+          data: { labels: yLabels, datasets: [{ label: 'Inversión (USD)', data: yLabels.map(k=>yData[k]), backgroundColor: '#3b82f6', borderRadius: 6, hoverBackgroundColor: '#60a5fa' }] }, 
+          options: { ...gOpt, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: {color: '#94a3b8'} }, y: { grid: { color: '#1e293b', borderDash: [5, 5] }, ticks: {color: '#94a3b8'} } } } 
+        });
+
+        let bData = {}; 
+        filteredData.forEach(d => { 
+            if(d.cost > 0 && d.brandStr !== 'SIN MARCA' && d.brandStr !== 'null') {
+                let brs = d.brandStr.split(',');
+                let partialCost = d.cost / brs.length;
+                brs.forEach(b => { let bt = b.trim(); bData[bt] = (bData[bt] || 0) + partialCost; });
+            } 
+        });
+        const sortedBrands = Object.entries(bData).sort((a,b) => b[1] - a[1]);
+        const bLabels = sortedBrands.length ? sortedBrands.map(i => i[0]) : ['Sin Datos'];
+        const bVals = sortedBrands.length ? sortedBrands.map(i => i[1]) : [1];
+        
+        if(charts.brand) charts.brand.destroy();
+        charts.brand = new Chart(gCtx('brandChart'), { 
+          type: 'bar', 
+          data: { labels: bLabels, datasets: [{ label: 'Inversión (USD)', data: bVals, backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ec4899','#8b5cf6','#0ea5e9', '#64748b'], borderRadius: 4 }] }, 
+          options: { 
+              ...gOpt, 
+              indexAxis: 'y', 
+              plugins: { legend: { display: false } }, 
+              scales: { 
+                  x: { grid: { color: '#1e293b', borderDash: [5, 5] }, ticks: {color: '#94a3b8'} }, 
+                  y: { grid: { display: false }, ticks: {color: '#94a3b8', font: {size: 10}} } 
+              } 
+          } 
+        });
+      } catch (err) {}
+    }
+
+    // ==========================================
+    // EXPORTACIÓN AVANZADA
+    // ==========================================
+    window.openExportModal = function() {
+        if (!hasPermission('export')) return showToast('No tienes permiso para exportar.', 'error');
+        if (!filteredData.length) return showToast("No hay datos filtrados para exportar.", "error");
+        
+        const dateStr = new Date().toISOString().slice(0,10);
+        document.getElementById('expFileName').value = `Reporte_Inventario_PBS_${dateStr}`;
+        
+        document.getElementById('expUsersRow').classList.toggle('hidden', !hasPermission('manageUsers'));
+        document.getElementById('exportCountLabel').innerText = filteredData.length.toLocaleString();
+        
+        document.getElementById('exportModal').classList.remove('hidden');
+        document.getElementById('exportModal').classList.add('flex');
+    }
+
+    window.closeExportModal = function() {
+        document.getElementById('exportModal').classList.add('hidden');
+        document.getElementById('exportModal').classList.remove('flex');
+    }
+
+    window.confirmExport = function() {
+      if (!hasPermission('export')) return showToast('No tienes permiso para exportar.', 'error');
+      
+      const fileName = document.getElementById('expFileName').value.trim() || 'Reporte_Inventario';
+      
+      const conf = {
+          structure: document.getElementById('expStructure').value,
+          summary: document.getElementById('expSummary').checked,
+          year: document.getElementById('colYear').checked,
+          month: document.getElementById('colMonth').checked,
+          po: document.getElementById('colPO').checked,
+          link: document.getElementById('colLink').checked,
+          brands: document.getElementById('colBrands').checked,
+          remarks: document.getElementById('colRemarks').checked,
+          costBase: document.getElementById('colCost').checked,
+          status: document.getElementById('expStatus').checked,
+          comments: document.getElementById('expComments').checked,
+          
+          details: document.getElementById('expDetails').checked,
+          detSerial: document.getElementById('detSerial').checked,
+          detBrand: document.getElementById('detBrand').checked,
+          detModel: document.getElementById('detModel').checked,
+          detDesc: document.getElementById('detDesc').checked,
+          detCost: document.getElementById('colCostBase').checked,
+
+          users: hasPermission('manageUsers') && document.getElementById('expUsers').checked
+      };
+      
+      const wb = XLSX.utils.book_new();
+
+      if (conf.summary) {
+          const summaryData = [
+              {"INDICADORES": "Total Órdenes PO", "VALOR": document.getElementById('kpiTotalOrders').innerText},
+              {"INDICADORES": "Total Unidades", "VALOR": document.getElementById('kpiTotalUnits').innerText},
+              {"INDICADORES": "Total Inversión USD", "VALOR": document.getElementById('kpiTotalCost').innerText},
+              {"INDICADORES": "Marcas Activas", "VALOR": document.getElementById('kpiBrandCount').innerText},
+              {"INDICADORES": "Filtro Aplicado", "VALOR": `Años: ${selectedYears.length===0 || selectedYears.includes('ALL')?'Todos':selectedYears.join(', ')} | Marcas: ${selectedBrands.length===0 || selectedBrands.includes('ALL')?'Todas':selectedBrands.join(', ')}`}
+          ];
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryData), "Resumen_Ejecutivo");
+      }
+
+      let sheetGroups = {};
+
+      filteredData.forEach(o => {
+          let baseVal = {};
+          
+          if(conf.year) baseVal['Año de Adquisición'] = o.year;
+          if(conf.month) baseVal['Mes de Ingreso'] = o.month;
+          if(conf.po) baseVal['PO / Orden'] = o.po;
+          if(conf.link) baseVal['Enlace Original a PO'] = o.poLink || 'Sin enlace';
+          if(conf.brands) baseVal['Marcas Asociadas'] = o.brandStr;
+          if(conf.remarks) baseVal['PO Remarks'] = o.poRemarks;
+          if(conf.costBase) baseVal['Costo Base USD'] = o.cost;
+          if(conf.status) baseVal['Estado de Stock'] = o.isRemoved ? 'RETIRADO' : 'ACTIVO';
+          if(conf.comments) baseVal['Notas del Equipo'] = o.customComment || '-';
+
+          let sheetName = "Reporte_General";
+          if (conf.structure === 'BY_YEAR') {
+              sheetName = String(o.year).substring(0, 31); 
+          } else if (conf.structure === 'BY_BRAND') {
+              sheetName = String(o.brandStr).split(',')[0].trim().substring(0, 31);
+              if (sheetName === 'SIN MARCA') sheetName = 'SIN_MARCA';
+          }
+
+          if(!sheetGroups[sheetName]) sheetGroups[sheetName] = [];
+
+          if (conf.details && (conf.detSerial || conf.detBrand || conf.detModel || conf.detDesc || conf.detCost)) {
+              if (o.details.length === 0) {
+                  let row = {...baseVal};
+                  if(conf.detSerial) row['Serie Desglose'] = '-';
+                  if(conf.detBrand) row['Marca Desglose'] = '-';
+                  if(conf.detModel) row['Modelo Desglose'] = '-';
+                  if(conf.detDesc) row['Desc. Desglose'] = '-';
+                  if(conf.detCost) row['Costo Unitario'] = '-';
+                  sheetGroups[sheetName].push(row);
+              } else {
+                  o.details.forEach(d => {
+                      let row = {...baseVal};
+                      if(conf.detSerial) row['Serie Desglose'] = d.serial;
+                      if(conf.detBrand) row['Marca Desglose'] = d.brand;
+                      if(conf.detModel) row['Modelo Desglose'] = d.model;
+                      if(conf.detDesc) row['Desc. Desglose'] = d.description;
+                      if(conf.detCost) row['Costo Unitario'] = d.cost;
+                      sheetGroups[sheetName].push(row);
+                  });
+              }
+          } else {
+              baseVal['Cant. Ítems'] = o.itemCount;
+              sheetGroups[sheetName].push(baseVal);
+          }
+      });
+
+      Object.keys(sheetGroups).forEach(sn => {
+          let cleanSn = sn.replace(/[:\\/?*\[\]]/g, "_");
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetGroups[sn]), cleanSn);
+      });
+
+      if (conf.users) {
+          const userRows = users.map(u => ({
+              'Usuario': u.username,
+              'Rol': u.role,
+              'PasswordHash': u.passwordHash,
+              'Permisos': JSON.stringify(u.permissions || {})
+          }));
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(userRows), "Usuarios");
+      }
+
+      try {
+        XLSX.writeFile(wb, `${fileName}.xlsx`);
+        closeExportModal();
+        showToast("Reporte personalizado generado exitosamente.", 'success');
+      } catch (e) {
+        showToast("Error al generar Excel. Simplifique el reporte.", 'error');
+      }
+    }
+  </script>
+</body>
+</html>
